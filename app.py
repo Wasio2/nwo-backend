@@ -17,8 +17,4 @@ def get_message():
     }
     return jsonify(data)
 
-if _name_ == '_main_':
-    # Railway will set the PORT environment variable, so we use it here
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+
