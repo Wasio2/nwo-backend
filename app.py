@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 app = Flask(_name_)
+
 # Enable CORS for all domains to allow your Vercel frontend to access the API
 CORS(app)
 
