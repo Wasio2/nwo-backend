@@ -106,7 +106,7 @@ def run_sql_setup():
         if conn:
             conn.close()
 
-run_sql_setup()
+
 
 # --- API Endpoints ---
 
