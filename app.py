@@ -83,6 +83,19 @@ def run_sql_setup():
                 comment TEXT
             );
         """)
+        # --- Insert a test lawyer if none exist ---
+        cur.execute("SELECT COUNT(*) FROM lawyers;")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+                INSERT INTO lawyers (id, name, rating, is_online)
+                VALUES (1, 'Atticus Finch', 4.8, TRUE);
+            """)
+            print("Inserted test lawyer: Atticus Finch")
+        # -----------------------------------------
+
+        conn.commit()
+        cur.close()
+        print("Database setup complete.")
 
         conn.commit()
         cur.close()
