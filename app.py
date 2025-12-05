@@ -115,8 +115,7 @@ def run_sql_setup():
         if conn is not None:
             conn.close()
 
-# run_sql_setup() # We commented this out in the previous step, but if you want to run it once:
-# run_sql_setup()
+# run_sql_setup() # Keep this commented out unless you need to re-run setup
 
 # --- MPesa credentials & helpers ---
 MPESA_CONSUMER_KEY = os.environ.get('MPESA_CONSUMER_KEY')
@@ -315,4 +314,3 @@ if __name__ == '__main__':
     # Use socketio.run so websockets work
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port)
-
