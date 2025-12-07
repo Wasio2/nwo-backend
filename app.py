@@ -8,14 +8,14 @@ from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
-# Eventlet is recommended for Flask-SocketIO on Railway/Render
-import eventlet
-eventlet.monkey_patch()
+# --- gevent is used for concurrency instead of eventlet ---
+# No explicit monkey-patching is needed here, as gevent is handled by the gunicorn worker
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret')
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+# Change async_mode to 'gevent'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # Database URL
 DATABASE_URL = os.environ.get('DATABASE_URL')
@@ -164,17 +164,14 @@ def lipa_na_mpesa_stk_push(phone_number, amount, account_reference, transaction_
 
 # -------------------------------------------
 # Socket.IO: presence & real-time notifications
-# We will keep a simple mapping of lawyer_id -> sid room. In prod use Redis message queue for multiple instances.
 LAWYER_ROOM_PREFIX = "lawyer_"
 
 @socketio.on('connect')
 def on_connect():
-    # The frontend should emit 'identify' with { role, user_id } after connect
     print('Client connected', request.sid)
 
 @socketio.on('identify')
 def on_identify(data):
-    # data: { role: 'lawyer'|'client', user_id: 123 }
     role = data.get('role')
     user_id = data.get('user_id')
     if role == 'lawyer' and user_id:
@@ -191,12 +188,6 @@ def on_disconnect():
 # API Endpoint: create dispatch request and notify top online lawyers
 @app.route('/api/dispatch/request', methods=['POST'])
 def dispatch_request():
-    """
-    Body: { client_id, case_type, lat, lng, max_fee }
-    - Save request to DB
-    - Find candidate lawyers (simple: online lawyers ordered by rating)
-    - Emit 'case_offer' event to their socket rooms (they will get the offer and accept)
-    """
     body = request.get_json()
     client_id = body.get('client_id')
     case_type = body.get('case_type')
@@ -229,7 +220,7 @@ def dispatch_request():
             'client_id': client_id,
             'case_type': case_type,
             'lat': lat, 'lng': lng,
-            'fee_estimate': 2000,  # you can compute dynamic surge
+            'fee_estimate': 2000,
             'timestamp': int(time.time())
         }
         # emit event to the lawyer room
@@ -242,9 +233,6 @@ def dispatch_request():
 # Lawyer accepts offer (called from their app)
 @app.route('/api/dispatch/<int:request_id>/accept', methods=['POST'])
 def accept_offer(request_id):
-    """
-    Body: { lawyer_user_id }
-    """
     body = request.get_json()
     lawyer_user_id = body.get('lawyer_user_id')
     if not lawyer_user_id:
@@ -253,7 +241,6 @@ def accept_offer(request_id):
     conn = get_db_connection()
     cur = conn.cursor()
     # Find request and set assigned_lawyer (store lawyer_id)
-    # This example assumes lawyer.user_id -> lawyers.user_id mapping exists
     cur.execute("SELECT id FROM lawyers WHERE user_id=%s", (lawyer_user_id,))
     r = cur.fetchone()
     if not r:
@@ -274,10 +261,6 @@ def accept_offer(request_id):
 # MPesa STK push API - initiate checkout from frontend
 @app.route('/api/payments/mpesa/stk', methods=['POST'])
 def mpesa_stk():
-    """
-    Body: { phone_number: '2547XXXXXXXX', amount: 2000, account_ref: 'case-123' }
-    Returns MPesa response (checkout request)
-    """
     body = request.get_json()
     phone = body.get('phone_number')
     amount = body.get('amount')
@@ -286,7 +269,6 @@ def mpesa_stk():
 
     try:
         resp = lipa_na_mpesa_stk_push(phone, amount, account_ref, desc)
-        # return the response to client so they can show instructions
         return jsonify({'status': 'initiated', 'mpesa': resp})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -313,4 +295,9 @@ def health():
 if __name__ == '__main__':
     # Use socketio.run so websockets work
     port = int(os.environ.get('PORT', 5000))
+    # Note: When running locally, you might need to install gevent and gevent-websocket
     socketio.run(app, host='0.0.0.0', port=port)
+
+
+
+               
