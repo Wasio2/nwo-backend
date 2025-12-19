@@ -181,7 +181,45 @@ def on_disconnect():
 
 # -------------------------------------------
 # API Endpoint: create dispatch request and notify top online lawyers
-@app.route('/api/dispatch/request', methods=['POST'])
+@app.route('/api/dispatch/request', methods=['POST']) # API Endpoint: Update Lawyer Status
+@app.route('/api/lawyer/status', methods=['POST'])
+def update_lawyer_status():
+    """
+    Body: { user_id: 123, is_online: true/false }
+    - Updates the lawyer's online status in the database.
+    """
+    body = request.get_json()
+    user_id = body.get('user_id')
+    is_online = body.get('is_online')
+
+    if user_id is None or is_online is None:
+        return jsonify({'error': 'user_id and is_online required'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Update the lawyer's status and last active time
+        cur.execute("""
+            UPDATE lawyers SET is_online = %s, last_active = NOW() 
+            WHERE user_id = %s 
+            RETURNING id
+        """, (is_online, user_id))
+        
+        if cur.rowcount == 0:
+            return jsonify({'error': 'Lawyer not found'}), 404
+            
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'status': 'success', 'user_id': user_id, 'is_online': is_online})
+
+    except Exception as e:
+        if conn: conn.close()
+        print(f"Error updating lawyer status: {e}")
+        return jsonify({'error': 'Internal Server Error'}), 500
+
 def dispatch_request():
     body = request.get_json()
     client_id = body.get('client_id')
