@@ -3,18 +3,16 @@ import base64
 import json
 import time
 import requests
-import psycopg2
+import psycopg # <--- CORRECT IMPORT
 from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 # --- gevent is used for concurrency instead of eventlet ---
-# No explicit monkey-patching is needed here, as gevent is handled by the gunicorn worker
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret')
 CORS(app)
-# Change async_mode to 'gevent'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 
 # Database URL
@@ -23,7 +21,8 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 def get_db_connection():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL not set")
-    conn = psycopg2.connect(DATABASE_URL)
+    # Use psycopg.connect instead of psycopg2.connect
+    conn = psycopg.connect(DATABASE_URL) 
     return conn
 
 # --- Initial DB Setup (MERGED) ---
@@ -33,7 +32,7 @@ def run_sql_setup():
         print("DATABASE_URL not found. Skipping database setup.")
         return
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db_connection() # Use the new connection function
         cur = conn.cursor()
 
         # 1. Lawyers table
@@ -44,7 +43,7 @@ def run_sql_setup():
                 rating FLOAT DEFAULT 0,
                 is_online BOOLEAN DEFAULT FALSE,
                 last_active TIMESTAMP,
-                user_id INT -- Added for dispatch logic
+                user_id INT
             );
         """)
         
@@ -96,7 +95,7 @@ def run_sql_setup():
             );
         """)
 
-        # 6. Mpesa Webhooks table (NEW)
+        # 6. Mpesa Webhooks table
         cur.execute("""
             CREATE TABLE IF NOT EXISTS mpesa_webhooks (
                 id SERIAL PRIMARY KEY,
@@ -120,11 +119,11 @@ def run_sql_setup():
 # --- MPesa credentials & helpers ---
 MPESA_CONSUMER_KEY = os.environ.get('MPESA_CONSUMER_KEY')
 MPESA_CONSUMER_SECRET = os.environ.get('MPESA_CONSUMER_SECRET')
-MPESA_SHORTCODE = os.environ.get('MPESA_SHORTCODE')         # e.g. 174379 (sandbox)
-MPESA_PASSKEY = os.environ.get('MPESA_PASSKEY')             # STK passkey
-MPESA_CALLBACK_URL = os.environ.get('MPESA_CALLBACK_URL')   # set on Railway to /api/mpesa/webhook
+MPESA_SHORTCODE = os.environ.get('MPESA_SHORTCODE')
+MPESA_PASSKEY = os.environ.get('MPESA_PASSKEY')
+MPESA_CALLBACK_URL = os.environ.get('MPESA_CALLBACK_URL')
 
-MPESA_BASE = "https://sandbox.safaricom.co.ke"  # sandbox; switch to production endpoint in prod
+MPESA_BASE = "https://sandbox.safaricom.co.ke"
 
 def get_mpesa_token( ):
     if not (MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET):
@@ -137,10 +136,6 @@ def get_mpesa_token( ):
     return resp.json()['access_token']
 
 def lipa_na_mpesa_stk_push(phone_number, amount, account_reference, transaction_desc):
-    """
-    Initiate STK Push (Lipa Na Mpesa Online)
-    Returns API response (and should include checkout request id)
-    """
     token = get_mpesa_token()
     timestamp = time.strftime("%Y%m%d%H%M%S")
     password = base64.b64encode(f"{MPESA_SHORTCODE}{MPESA_PASSKEY}{timestamp}".encode()).decode()
@@ -151,7 +146,7 @@ def lipa_na_mpesa_stk_push(phone_number, amount, account_reference, transaction_
         "Timestamp": timestamp,
         "TransactionType": "CustomerPayBillOnline",
         "Amount": int(amount),
-        "PartyA": phone_number,           # customer phone in format 2547XXXXXXXX
+        "PartyA": phone_number,
         "PartyB": MPESA_SHORTCODE,
         "PhoneNumber": phone_number,
         "CallBackURL": MPESA_CALLBACK_URL,
@@ -280,6 +275,7 @@ def mpesa_webhook():
     # Save webhook JSON to db for auditing and update wallets when payment is successful
     conn = get_db_connection()
     cur = conn.cursor()
+    # Use %s placeholder for JSON data
     cur.execute("INSERT INTO mpesa_webhooks (payload) VALUES (%s)", (json.dumps(data),))
     conn.commit()
     cur.close()
@@ -293,11 +289,5 @@ def health():
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
-    # Use socketio.run so websockets work
     port = int(os.environ.get('PORT', 5000))
-    # Note: When running locally, you might need to install gevent and gevent-websocket
     socketio.run(app, host='0.0.0.0', port=port)
-
-
-
-               
